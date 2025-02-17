@@ -1,51 +1,59 @@
-import streamlit as st
-from transformers import pipeline
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
+# Library imports
+import numpy as np
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import PlainTextResponse
+import numpy as np
+import io
+from PIL import Image
+import cv2
+from keras.models import load_model
+import warnings
+warnings.filterwarnings("ignore")
 
-# Download necessary NLTK data
-nltk.download('punkt')
-nltk.download('stopwords')
+model = load_model('plant_classifier.h5')
 
+# Name of Classes
+target_names = ['Healthy', 'Powdery', 'Rust']
 
-# Load a pre-trained Hugging Face model
-chatbot = pipeline("text-generation", model="distilgpt2")
-
-
-# Define healthcare-specific response logic (or use a model to generate responses)
-def healthcare_chatbot(user_input):
-    # Simple rule-based keywords to respond
-    if "symptom" in user_input:
-        return "It seems like you're experiencing symptoms. Please consult a doctor for accurate advice."
-    elif "appointment" in user_input:
-        return "Would you like me to schedule an appointment with a doctor?"
-    elif "medication" in user_input:
-        return "It's important to take your prescribed medications regularly. If you have concerns, consult your doctor."
-    else:
-        # For other inputs, use the Hugging Face model to generate a response
-        response = chatbot(user_input, max_length=300, num_return_sequences=1)
-        # Specifies the maximum length of the generated text response, including the input and the generated tokens.
-        # If set to 3, the model generates three different possible responses based on the input.
-        return response[0]['generated_text']
+app = FastAPI(
+    title="Plant Disease Detection API",
+    description="""An API that utilises a Deep Learning model built with Keras(Tensorflow) to detect if a plant is healthy or suffering from Rust and Powder formation.""",
+    version="0.0.1",
+    debug=True,
+)
 
 
-# Streamlit web app interface
-def main():
-    # Set up the web app title and input area
-    st.title("Healthcare Assistant Chatbot")
-    
-    # Display a simple text input for user queries
-    user_input = st.text_input("How can I assist you today?", "")
-    
-    # Display chatbot response
-    if st.button("Submit"):
-        if user_input:
-            st.write("User: ", user_input)
-            response = healthcare_chatbot(user_input)
-            st.write("Healthcare Assistant: ", response)
-        else:
-            st.write("Please enter a query.")
+@app.get("/", response_class=PlainTextResponse)
+async def running():
+    note = """
+Plant Disease Detection API 🙌🏻
+Note: add "/docs" to the URL to get the Swagger UI Docs or "/redoc"
+  """
+    return note
 
-if __name__ == "__main__":
-    main()
+
+favicon_path = "favicon.png"
+
+
+@app.post("/predict")
+async def root(file: UploadFile = File(...)):
+    """
+    The root function returns the prediction of an image using a pretrained model.
+    Parameters:
+        file (UploadFile): The image to be predicted. 
+    Returns:
+        result (str): The prediction of the image as a string.  
+    Args:
+        file:UploadFile=File(...): Specify that the file is uploaded as a multipart/form-data request
+    Returns:
+        The prediction of the model in json format
+    """
+
+    contents = io.BytesIO(await file.read())
+    file_bytes = np.asarray(bytearray(contents.read()), dtype=np.uint8)
+    img = cv2.imdecode(file_bytes, 1)
+    img = cv2.resize(img, (80, 80))
+    img.shape = (1, 80, 80, 3)
+    image = model.predict(img)
+    result = target_names[np.argmax(image)]
+    return (str("Result from prediction: " +result + " plant."))
